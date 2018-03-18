@@ -1,0 +1,12 @@
+(jbuild_version 1)
+
+(library (
+  (name shm_ipc)
+  (public_name shm_ipc)
+  (modules (shm_ipc))
+  (c_names (shm_stubs_lib shm_stubs_ipc))
+  (cxx_names (shm_stubs_ocaml))
+  (libraries (
+    batteries
+  ))
+))

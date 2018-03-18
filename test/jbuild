@@ -1,0 +1,15 @@
+(jbuild_version 1)
+
+(executable (
+  (name test_shm)
+  (libraries (
+    shm_ipc
+    lwt lwt.unix
+  ))
+))
+
+(alias (
+  (name    run_test)
+  (deps    (test_shm.exe))
+  (action  (run ${<}))
+))
