@@ -17,42 +17,33 @@ let create_client _ =
   Printf.printf "Blah size %d\n" (Bigarray.Array1.dim data_ba);
   client
 
-let server_thread s msg : unit -> unit Lwt.t =
+let server_thread s msg =
   let iter = ref 0 in
-  let poll_n _ =
-    trace __POS__;
+  let timeout_callback _ = 
     let n = !iter in
     iter := !iter + 1;
     if (n=5) then (ignore (Shm_ipc.Ipc.Server.send s 0 msg));
-    let quit  = (
-        let (rc,msg,client) = Shm_ipc.Ipc.Server.poll s (1000) in
-        match rc with 
-        | Shm_ipc.Ipc.Timeout -> false
-        | Shm_ipc.Ipc.Message -> (Printf.printf "server message\n"; true )
-        | _ -> (Printf.printf "server other\n"; true)
-      )
-    in
-    if quit then None else (Some ())
+    Some ()
   in
-  let stream = Lwt_stream.from_direct poll_n in
+  let msg_callback client msg = 
+    Printf.printf "server message from client %d at iteration %d\n" client !iter;
+    None
+  in
+  let stream = Lwt_stream.from_direct (Shm_ipc.server_thread_poll s 1000 timeout_callback msg_callback) in
   fun _ -> Lwt_stream.iter_s (fun _ -> Lwt_main.yield ()) stream
 
-let client_thread s : unit -> unit Lwt.t =
+let client_thread s =
   let iter = ref 0 in
-  let poll_n _ =
-    trace __POS__;
-    let n = !iter in
+  let timeout_callback _ = 
     iter := !iter + 1;
-    let quit = (
-        let (rc,msg) = Shm_ipc.Ipc.Client.poll s (1000) in
-        match rc with 
-        | Shm_ipc.Ipc.Timeout -> false
-        | Shm_ipc.Ipc.Message -> (Printf.printf "client message\n"; Shm_ipc.Ipc.Client.send s msg ; true )
-        | _ -> (Printf.printf "client other\n"; true)
-      ) in
-    if quit then None else (Some ())
-  in 
-  let stream = Lwt_stream.from_direct poll_n in
+    Some ()
+  in
+  let msg_callback msg = 
+    Printf.printf "client message from server at iteration %d\n" !iter;
+    ignore (Shm_ipc.Ipc.Client.send s msg);
+    None
+  in
+  let stream = Lwt_stream.from_direct (Shm_ipc.client_thread_poll s 1000 timeout_callback msg_callback) in
   fun _ -> Lwt_stream.iter_s (fun _ -> Lwt_main.yield ()) stream
 
 let _ =

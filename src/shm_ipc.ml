@@ -173,11 +173,13 @@ let create_client filename key size =
     fun _ -> Lwt_stream.iter_s (fun _ -> Lwt_main.yield ()) stream
  *)
 let server_thread_poll server timeout timeout_callback msg_callback =
-  let (rc,msg,client) = Ipc.Server.poll server timeout in
-  match rc with 
-  | Ipc.Timeout -> timeout_callback ()
-  | Ipc.Message -> msg_callback client msg
-  | _ -> (Printf.printf "server other\n"; None)
+  fun _ -> (
+    let (rc,msg,client) = Ipc.Server.poll server timeout in
+    match rc with 
+    | Ipc.Timeout -> timeout_callback ()
+    | Ipc.Message -> msg_callback client msg
+    | _ -> (Printf.printf "server other\n"; None)
+  )
 
 (*f client_thread_poll - polling thread, for use with Lwt_stream
   let client_thread client timeout t_cb m_cb = 
@@ -185,9 +187,11 @@ let server_thread_poll server timeout timeout_callback msg_callback =
     fun _ -> Lwt_stream.iter_s (fun _ -> Lwt_main.yield ()) stream
  *)
 let client_thread_poll client timeout timeout_callback msg_callback =
-  let (rc,msg) = Ipc.Client.poll client timeout in
-  match rc with 
-  | Ipc.Timeout -> timeout_callback ()
-  | Ipc.Message -> msg_callback msg
-  | _ -> (Printf.printf "client other\n"; None)
+  fun _ -> (
+    let (rc,msg) = Ipc.Client.poll client timeout in
+    match rc with 
+    | Ipc.Timeout -> timeout_callback ()
+    | Ipc.Message -> msg_callback msg
+    | _ -> (Printf.printf "client other\n"; None)
+  )
 
