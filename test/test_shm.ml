@@ -64,3 +64,18 @@ let _ =
   ()
 
 
+let _ =
+  let t = Bigarray.Array1.create Bigarray.char Bigarray.c_layout 1024 in
+  let u = Shm_ipc.Ba.retype_sub Bigarray.int32 Bigarray.c_layout t 0 32 in
+  t.{0} <- '0';
+  t.{1} <- '1';
+  t.{2} <- '2';
+  t.{3} <- '3';
+  Printf.printf "%0lx\n" u.{0};
+(*
+  Mbf.[ String model_name ; Array [| coords_start; coords_len; indices_start; indices_len; num_tris; num_lines; num_patches|] ]
+  Mbf.[ String object_name ; String model_name ; |]
+  Mbf.[ String object_name ; String model_name ; |]
+*)
+
+  ()

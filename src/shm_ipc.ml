@@ -284,23 +284,6 @@ struct
     | RepInt64  of ('a, t_ba_int64)  t_gen_fold_fn
     | Blob      of ('a, (t * int * int))  t_gen_fold_fn
 
-  (*f exec_fold_fn - execute the correct kind of fold function *)
-  let exec_fold_fn t f acc v =
-    match f with
-    | String  f    -> f acc (Value.string t v)
-    | Double f     -> f acc (Value.double v)
-    | Float  f     -> f acc (Value.float  v)
-    | Bool  f      -> f acc (Value.bool   v)
-    | Enum  f      -> f acc (Value.int    v)
-    | Int   f      -> f acc (Value.int    v)
-    | Int32  f     -> f acc (Value.int32  v)
-    | Int64  f     -> f acc (Value.int64  v)
-    | RepDouble f  -> f acc (Value.rep_double t v)
-    | RepFloat f   -> f acc (Value.rep_float t v)
-    | RepInt32 f   -> f acc (Value.rep_int32 t v)
-    | RepInt64 f   -> f acc (Value.rep_int64 t v)
-    | Blob f       -> f acc (Value.array t v)
-
   (*f read_varint - read a varint from an mbf (byte bigarray) at an offset as int64 and return new offset *)
   let read_varint t o =
     let rec acc_bits i acc =
@@ -361,7 +344,24 @@ struct
            (key, Arr (ofs,size), no)
     | _ -> raise BadMsg
                  
-  (*f fold_message - Fold over a complete protobuf message, invoking appropriate function for each element *)
+  (*f exec_fold_fn - execute the correct kind of fold function *)
+  let exec_fold_fn t f acc v =
+    match f with
+    | String  f    -> f acc (Value.string t v)
+    | Double f     -> f acc (Value.double v)
+    | Float  f     -> f acc (Value.float  v)
+    | Bool  f      -> f acc (Value.bool   v)
+    | Enum  f      -> f acc (Value.int    v)
+    | Int   f      -> f acc (Value.int    v)
+    | Int32  f     -> f acc (Value.int32  v)
+    | Int64  f     -> f acc (Value.int64  v)
+    | RepDouble f  -> f acc (Value.rep_double t v)
+    | RepFloat f   -> f acc (Value.rep_float t v)
+    | RepInt32 f   -> f acc (Value.rep_int32 t v)
+    | RepInt64 f   -> f acc (Value.rep_int64 t v)
+    | Blob f       -> f acc (Value.array t v)
+
+  (*f fold_message - Fold over a complete mbf message, invoking appropriate function for each element *)
   let fold_message t fn_of_key acc ofs len =
     let end_of_block = ofs+len in
     let rec fold_over_kv acc ofs =
