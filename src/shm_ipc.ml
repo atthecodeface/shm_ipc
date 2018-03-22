@@ -171,6 +171,16 @@ struct
 end
 
 (*m Mbf
+
+  Mbfs consist of entries each of which starts with a key/type int32:
+
+    type is bottom 3 bits
+    rest are key
+
+    type 0 => value is 4 bytes
+    type 1 => value is 8 bytes
+    type 2 => value is (4 byte length)::data of length + padding to next 4-byte boundary
+    type 3 => value is (4 byte ofs, 4 byte len) to data within the mbf
  *)
 module Mbf =
 struct
@@ -180,6 +190,171 @@ struct
   (*t type 't' *)
   type t = t_ba_char
 
+  (*f round_up_to *)
+  let round_up_to n k =
+    (k + (n-1)) land (-n)
+
+  (*m Make module - make an mbf *)
+  module Make =
+    struct
+      (*t t_elt *)
+      type t_elt =
+        | Callback      of (bool-> int -> unit)
+        | Assoc         of ((string -> int) * ((string * t_elt) list))
+        | List          of t_elt list
+        | String        of string
+        | Float         of float
+        | Double        of float
+        | Int           of int
+        | Int32         of int32
+        | Int64         of int64
+        | ArrayFloat    of float array
+        | ArrayDouble   of float array
+        | ArrayInt32    of int32 array
+        | ArrayInt64    of int64 array
+        | Blob          of (bool -> int -> int -> int) (* fill -> ofs -> max_size -> act_size function *)
+
+      (*f int64_of_double *)
+      let int64_of_double v = Int64.bits_of_float v
+
+      (*f int64_of_float *)
+      let int64_of_float v  = Int64.of_int32 (Int32.bits_of_float v)
+
+      (*f size_inline ofs k - store the key+type as int32 then data keeping alignment of next to 4-bytes *)
+      let size_inline ofs k ?size:(size=1) len =
+        let ofs = ofs+4 in
+        let ofs = (round_up_to size ofs) in
+        ofs + (round_up_to 4 (len*size))
+
+      (*f size - work out the size in bytes to store key 'k' -> element 't' at offset 'ofs' *)
+      let rec size ofs k t =
+        match t with
+        | Callback f -> (f false ofs; ofs)
+        | List l    -> (
+          let (last_ofs,_) = List.fold_left (fun (ofs,i) e -> ((size ofs i e), i+1)) (ofs+8,0) l in
+          last_ofs
+        )
+        | Assoc (map,al)  -> (
+          let add_map_element ofs (n,e) =
+            let k = map n in
+            size ofs k e
+          in
+          let last_ofs = List.fold_left add_map_element (ofs+8) al in
+          last_ofs
+        )
+        | String s  -> (size_inline ofs k (4+(String.length s)))
+        | Float _   -> (size_inline ofs k 4)
+        | Double _  -> (size_inline ofs k 8)
+        | Int32 _   -> (size_inline ofs k 4)
+        | Int64 _   -> (size_inline ofs k 8)
+        | Int _     -> (size_inline ofs k 4)
+        | ArrayFloat a -> (size_inline ofs k ~size:4 (Array.length a))
+        | ArrayInt32 a -> (size_inline ofs k ~size:4 (Array.length a))
+        | ArrayDouble a -> (size_inline ofs k ~size:8 (Array.length a))
+        | ArrayInt64 a  -> (size_inline ofs k ~size:8 (Array.length a))
+        | Blob f        -> (size_inline ofs k (f false (ofs+8) 0))
+
+      (*f write_int_n - read an N byte integer (as an int64) little endian *)
+      let write_int_n n (mbf:t_ba_char) max_sz ofs d =
+        if (ofs+n)>max_sz then (ofs+n) else (
+          let rec write_byte i d =
+            if (i>=n) then () else (
+              mbf.{ofs+i} <- Char.chr (0xff land (Int64.to_int d));
+              write_byte (i+1) Int64.(shift_right d 8)
+            ) in
+          (write_byte 0 d);
+          ofs+n
+        )
+
+      (*f write_int_of_4 - write a 4 byte integer (as an int64) little endian *)
+      let write_int_of_4 = write_int_n 4
+
+      (*f write_key_type - write key 'k' of type 't' (0 to 3) and return ofs *)
+      let write_key_type mbf max_sz ofs k t =
+        let data = Int64.(logor (shift_left (of_int k) 3) (of_int t)) in
+        write_int_of_4 mbf max_sz ofs data
+
+      (*f write_key_data - write key 'k' and 4 or 8 bytes of int64 data and return ofs *)
+      let write_key_data mbf max_sz ofs k size v =
+        let t = if (size=4) then 0 else 1 in
+        let data = Int64.(logor (shift_left (of_int k) 3) (of_int t)) in
+        let ofs = write_int_of_4 mbf max_sz ofs data in
+        let ofs = write_int_of_4 mbf max_sz ofs v in
+        let ofs = if size<=4 then ofs else (
+          write_int_of_4 mbf max_sz ofs (Int64.shift_right v 32)
+        ) in
+        ofs
+
+      (*f write_key_data_array - write key 'k' and 4 or 8 bytes of each array element and return ofs *)
+      let write_key_data_array mbf max_sz ofs k size f a =
+        let data = Int64.(logor (shift_left (of_int k) 3) 2L) in
+        let ofs = write_int_of_4 mbf max_sz ofs data in
+        let len = Array.length a in
+        let padding = if size<=4 then 0 else (ofs+4) land 4 in
+        let byte_size = len * size + padding in
+        let ofs = write_int_of_4 mbf max_sz ofs (Int64.of_int byte_size) in
+        let ofs = ofs + padding in
+        let write_element ofs e =
+          let e = f e in
+          let ofs = write_int_of_4 mbf max_sz ofs e in
+          let ofs = if (size<=4) then ofs else (write_int_of_4 mbf max_sz ofs (Int64.shift_right e 32)) in
+          ofs
+        in
+        Array.fold_left write_element ofs a
+
+      (*f write - write key 'k' -> element 't' at offset 'ofs' in mbf with max size max_sz*)
+      let rec write mbf max_sz ofs k t =
+        match t with
+        | Callback f -> (f true ofs; ofs)
+        | List l    -> (
+          let write_element (ofs,i) e =
+            ((write mbf max_sz ofs i e), i+1)
+          in
+          let (last_ofs,_) = List.fold_left write_element (ofs+8,0) l in
+          let len = last_ofs - (ofs+8) in
+          let ofs = write_key_type  mbf max_sz ofs k 2 in
+          let _ = write_int_of_4  mbf max_sz ofs (Int64.of_int len) in
+          last_ofs
+        )
+        | Assoc (map,al)  -> (
+          let write_map_element ofs (n,e) =
+            let k = map n in
+            write mbf max_sz ofs k e
+          in
+          let last_ofs = List.fold_left write_map_element (ofs+8) al in
+          let len = last_ofs - (ofs+8) in
+          let ofs = write_key_type  mbf max_sz ofs k 2 in
+          let _ = write_int_of_4  mbf max_sz ofs (Int64.of_int len) in
+          last_ofs
+        )
+        | String s  -> (
+          let sl = String.length s in
+          let ofs = write_key_type mbf max_sz ofs k 2 in
+          let ofs = write_int_of_4  mbf max_sz ofs (Int64.of_int sl) in
+          let write_char i c =
+            mbf.{ofs+i} <- c
+          in
+          if (ofs+sl<max_sz) then String.iteri write_char s;
+          ofs + (round_up_to 4 sl)
+        )
+        | Float v   -> (write_key_data mbf max_sz ofs k 4 (int64_of_float v))
+        | Double v  -> (write_key_data mbf max_sz ofs k 8 (int64_of_double v))
+        | Int32 v   -> (write_key_data mbf max_sz ofs k 4 (Int64.of_int32 v))
+        | Int64 v   -> (write_key_data mbf max_sz ofs k 8 v)
+        | Int v     -> (write_key_data mbf max_sz ofs k 4 (Int64.of_int v))
+        | ArrayFloat a  -> (write_key_data_array mbf max_sz ofs k 4 int64_of_float a)
+        | ArrayInt32 a  -> (write_key_data_array mbf max_sz ofs k 4 Int64.of_int32 a)
+        | ArrayDouble a -> (write_key_data_array mbf max_sz ofs k 8 int64_of_double a)
+        | ArrayInt64 a  -> (write_key_data_array mbf max_sz ofs k 8 (fun x->x) a)
+        | Blob f        -> (
+          let len = f true (ofs+8) max_sz in
+          let ofs = write_key_type  mbf max_sz ofs k 2 in
+          let ofs = write_int_of_4  mbf max_sz ofs (Int64.of_int len) in
+          ofs + len
+        )
+
+      (*f All done *)
+    end
   (*t t_data - internal data *)
   type t_data = 
     | Value of int64
@@ -268,11 +443,14 @@ struct
   (*t t_gen_fold_fn *)
   type ('a,'b) t_gen_fold_fn = 'a -> 'b -> 'a
 
-  (*t t_fold_fn - functions of this type are supplied to fold_message to invoke callbacks on particular keys with their data*)
+  (*t t_fold_fn - functions of this type are supplied to fold_message to invoke callbacks on particular keys with their data
+
+    Need to add in 'remote' big array thing possibly (or just use RepInt32?)
+   *)
   type 'a t_fold_fn =
+    | None   
     | String of ('a, string)  t_gen_fold_fn
     | Bool   of ('a, bool)    t_gen_fold_fn
-    | Enum   of ('a, int)     t_gen_fold_fn
     | Int    of ('a, int)     t_gen_fold_fn
     | Float  of ('a, float)   t_gen_fold_fn
     | Double of ('a, float)   t_gen_fold_fn
@@ -283,18 +461,6 @@ struct
     | RepInt32  of ('a, t_ba_int32)  t_gen_fold_fn
     | RepInt64  of ('a, t_ba_int64)  t_gen_fold_fn
     | Blob      of ('a, (t * int * int))  t_gen_fold_fn
-
-  (*f read_varint - read a varint from an mbf (byte bigarray) at an offset as int64 and return new offset *)
-  let read_varint t o =
-    let rec acc_bits i acc =
-      let v = Char.code t.{o+i} in
-      let value = v land 0x7f in
-      let continues = (v land 0x80)!=0 in
-      let new_acc = Int64.(logor (shift_left (of_int value) (7*i))acc) in
-      if (continues) then (acc_bits (i+1) new_acc) else (i+1, new_acc)
-    in
-    let (n, value) = acc_bits 0 0L in
-    (value, o+n)
 
   (*f read_int_n - read an N byte integer (as an int64) little endian *)
   let read_int_n t o n =
@@ -310,7 +476,7 @@ struct
   (*f read_int_of_8 - read an 8 byte integer (as an int64) little endian *)
   let read_int_of_8 t o = read_int_n t o 8
 
-  (*f read_type_and_key - read a key from an mbf as field number/type
+  (*f read_type_and_key - read a key from an mbf as field number/type - 32 bits
   The key is a number plus a type
   The types are:
     0 -> inline 4-byte
@@ -320,8 +486,8 @@ struct
     4-7 reserved
    *)
   let read_type_and_key t o =
-    let (k, no) = read_varint t o in
-    let key          = Int64.(shift_right k 3) in
+    let (k, no)      = read_int_of_4 t o in
+    let key          = Int64.(to_int (shift_right k 3)) in
     let field_type   = (Int64.to_int k) land 7 in
     (field_type, key, no)
 
@@ -334,11 +500,11 @@ struct
     match field_type with
     | 0 -> let (value, no)  = read_int_of_4 t no in (key, Value value, no)
     | 1 -> let (value, no)  = read_int_of_8 t no in (key, Value value, no)
-    | 2 -> let (size, no)   = read_varint   t no in
+    | 2 -> let (size, no)   = read_int_of_4 t no in
            let size = Int64.to_int size in
-           (key, Arr (no,size), no+size)
-    | 3 -> let (ofs, no) = read_varint   t no in
-           let (size, no) = read_varint   t no in
+           (key, Arr (no,size), no+((size+3) land 0x7ffffffc))
+    | 3 -> let (ofs, no) = read_int_of_4   t no in
+           let (size, no) = read_int_of_4   t no in
            let ofs  = Int64.to_int ofs in
            let size = Int64.to_int size in
            (key, Arr (ofs,size), no)
@@ -347,11 +513,11 @@ struct
   (*f exec_fold_fn - execute the correct kind of fold function *)
   let exec_fold_fn t f acc v =
     match f with
+    | None -> acc
     | String  f    -> f acc (Value.string t v)
     | Double f     -> f acc (Value.double v)
     | Float  f     -> f acc (Value.float  v)
     | Bool  f      -> f acc (Value.bool   v)
-    | Enum  f      -> f acc (Value.int    v)
     | Int   f      -> f acc (Value.int    v)
     | Int32  f     -> f acc (Value.int32  v)
     | Int64  f     -> f acc (Value.int64  v)
@@ -369,11 +535,7 @@ struct
         acc
       ) else (
         let (k,v,new_ofs) = read_key_value t ofs in
-        let new_acc = 
-          match fn_of_key k with
-          | None -> acc
-          | Some f -> exec_fold_fn t f acc v
-        in
+        let new_acc = exec_fold_fn t (fn_of_key k) acc v in
         fold_over_kv new_acc new_ofs
       )
     in
