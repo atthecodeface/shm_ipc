@@ -86,7 +86,7 @@ let _ =
   let msg = Shm_ipc.Mbf.Make.(Assoc (key_of_rpc ,[("reset",List [String "name"; Callback post_name; ArrayFloat [|0.;1.;2.;|]; ])]) ) in
   let msg_size = Shm_ipc.Mbf.Make.size 0 0 msg in
   Printf.printf "Msg size %d\n" msg_size;
-  let final_size = Shm_ipc.Mbf.Make.write t 1024 0 0 msg in
+  let final_size = Shm_ipc.Mbf.Make.write t 1024 (-8) 0 msg in
   Printf.printf "Final size %d\n" final_size;
   Printf.printf "%0lx\n" u.{0};
   Printf.printf "%0lx\n" u.{1};
@@ -98,7 +98,7 @@ let _ =
   Printf.printf "%0lx\n" u.{7};
   Printf.printf "%0lx\n" u.{8};
   Printf.printf "%0lx\n" u.{9};
-  Shm_ipc.Mbf.fold_message t rpc_of_key () 8 (final_size-8);
+  Shm_ipc.Mbf.fold_message t rpc_of_key () 0 final_size;
 
 (*
   Mbf.[ String model_name ; Array [| coords_start; coords_len; indices_start; indices_len; num_tris; num_lines; num_patches|] ]

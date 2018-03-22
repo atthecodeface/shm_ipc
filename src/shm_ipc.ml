@@ -254,17 +254,17 @@ struct
         | ArrayInt64 a  -> (size_inline ofs k ~size:8 (Array.length a))
         | Blob f        -> (size_inline ofs k (f false (ofs+8) 0))
 
-      (*f write_int_n - read an N byte integer (as an int64) little endian *)
+      (*f write_int_n - write an N byte integer (as an int64) little endian *)
       let write_int_n n (mbf:t_ba_char) max_sz ofs d =
-        if (ofs+n)>max_sz then (ofs+n) else (
+        if (ofs>=0) && ((ofs+n)<=max_sz) then (
           let rec write_byte i d =
             if (i>=n) then () else (
               mbf.{ofs+i} <- Char.chr (0xff land (Int64.to_int d));
               write_byte (i+1) Int64.(shift_right d 8)
             ) in
           (write_byte 0 d);
-          ofs+n
-        )
+        );
+        ofs+n
 
       (*f write_int_of_4 - write a 4 byte integer (as an int64) little endian *)
       let write_int_of_4 = write_int_n 4
