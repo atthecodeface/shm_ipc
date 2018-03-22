@@ -14,7 +14,8 @@ let create_server _ =
 let create_client _ =
   let (shm, data, client) = Shm_ipc.create_client "/tmp/a.blob" 12345 65536L in
   let data_ba = Shm_ipc.Shm.data_ba data in
-  Printf.printf "Blah size %d address %0Lx\n" (Bigarray.Array1.dim data_ba) (Shm_ipc.Ba.address data_ba);
+  let data_ba2 = Shm_ipc.Ba.retype Bigarray.float32 Bigarray.c_layout data_ba in
+  Printf.printf "Blah size %d address %0Lx address %0Lx\n" (Bigarray.Array1.dim data_ba) (Shm_ipc.Ba.address data_ba) (Shm_ipc.Ba.address data_ba2);
   client
 
 let server_thread s msg =
@@ -50,7 +51,7 @@ let _ =
   let s = create_server () in
   let c = create_client () in
   let msgs = [Shm_ipc.Ipc.Server.msg_alloc s 10;Shm_ipc.Ipc.Server.msg_alloc s 20;Shm_ipc.Ipc.Server.msg_alloc s 30;] in
-  List.iteri (fun i m -> Printf.printf "Message %d size %d\n" i (Bigarray.Array1.dim (Shm_ipc.Ipc.msg_ba m))) msgs ;
+  List.iteri (fun i m -> let msg_ba = (Shm_ipc.Ipc.msg_ba m) in Printf.printf "Message %d size %d address %0Lx\n" i (Bigarray.Array1.dim msg_ba) (Shm_ipc.Ba.address msg_ba)) msgs ;
   trace __POS__;
   let st = server_thread s (List.hd msgs) in
   trace __POS__;

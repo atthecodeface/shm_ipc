@@ -431,9 +431,34 @@ shm_c_ba_retype(value kind, value layout, value ba)
     struct caml_ba_array *data = Caml_ba_array_val(ba);
     int ba_kind   = Caml_ba_kind_val(kind);
     int ba_layout = Caml_ba_layout_val(layout);
-    size_t byte_size = caml_ba_byte_size(data) / caml_ba_element_size[ba_kind];
-    void *base = &(data->data);
-    CAMLreturn(caml_ba_alloc_dims(ba_kind | ba_layout, 1, base, byte_size ));
+    size_t byte_size = caml_ba_byte_size(data);
+    size_t num_elements = byte_size / caml_ba_element_size[ba_kind];
+    void *base = data->data;
+    CAMLreturn(caml_ba_alloc_dims(ba_kind | ba_layout, 1, base, num_elements ));
+}
+
+/*f shm_c_ba_retype_sub : kind -> ('d, 'e, 'f) Bigarray.Array1.t -> int ofs -> int len -> ('a, 'b, 'c) Bigarray.Array1.t
+ *
+ * must only retype an _externally_ allocated bigarray or keep it in scope
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_ba_retype_sub(value dest_kind, value dest_layout, value ba, value ofs, value len)
+{
+    CAMLparam5(dest_kind, dest_layout, ba, ofs, len);
+    struct caml_ba_array *src = Caml_ba_array_val(ba);
+    size_t src_ofs      = ofs * caml_ba_element_size[(src->flags) & CAML_BA_KIND_MASK];
+    size_t byte_size    = len * caml_ba_element_size[(src->flags) & CAML_BA_KIND_MASK];
+    size_t last_byte    = src_ofs + byte_size;
+    if (last_byte > caml_ba_byte_size(src)) {
+        last_byte = caml_ba_byte_size(src);
+    }
+    size_t num_elements = (last_byte - src_ofs) / caml_ba_element_size[dest_kind];
+    void *base = (void *)((char *)src->data + src_ofs);
+    int ba_kind   = Caml_ba_kind_val(dest_kind);
+    int ba_layout = Caml_ba_layout_val(dest_layout);
+    CAMLreturn(caml_ba_alloc_dims(ba_kind | ba_layout, 1, base, num_elements ));
 }
 
 /*f shm_c_ba_address : ('a, 'b, 'c) Bigarray.Array1.t -> 
@@ -445,6 +470,6 @@ shm_c_ba_address(value ba)
 {
     CAMLparam1(ba);
     struct caml_ba_array *data = Caml_ba_array_val(ba);
-    void *base = &(data->data);
+    void *base = data->data;
     CAMLreturn(caml_copy_int64((int64_t) (base)));
 }

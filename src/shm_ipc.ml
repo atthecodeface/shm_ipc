@@ -19,8 +19,12 @@
 
 
 (*a Types *)
-(*t t_ba_char *)
-type t_ba_char     = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+(*t t_ba_* *)
+type t_ba_char   = (char,  Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+type t_ba_int32  = (int32, Bigarray.int32_elt,         Bigarray.c_layout) Bigarray.Array1.t
+type t_ba_int64  = (int64, Bigarray.int64_elt,         Bigarray.c_layout) Bigarray.Array1.t
+type t_ba_float  = (float, Bigarray.float32_elt,       Bigarray.c_layout) Bigarray.Array1.t
+type t_ba_double = (float, Bigarray.float64_elt,       Bigarray.c_layout) Bigarray.Array1.t
 
 (*a Modules
   Shm - the base shared memory module
@@ -155,11 +159,225 @@ end
 module Ba = 
 struct
   (*f external C stub function declarations *)
-  external _shm_ba_retype  : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> ('d, 'e, 'f) Bigarray.Array1.t-> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_ba_retype"
+  external _shm_ba_retype      : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> ('d, 'e, 'f) Bigarray.Array1.t-> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_ba_retype"
+  external _shm_ba_retype_sub  : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> ('d, 'e, 'f) Bigarray.Array1.t -> int -> int -> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_ba_retype_sub"
   external _shm_ba_address  : ('a, 'b, 'c) Bigarray.Array1.t -> int64 = "shm_c_ba_address"
 
-  let retype  kind layout ba = _shm_ba_retype kind layout ba
-  let address ba             = _shm_ba_address ba
+  let retype_sub  kind layout ba ofs len = _shm_ba_retype_sub kind layout ba ofs len
+  let retype      kind layout ba = _shm_ba_retype kind layout ba
+  let address     ba             = _shm_ba_address ba
+
+  (*f All done *)
+end
+
+(*m Mbf
+ *)
+module Mbf =
+struct
+  (*t exceptions *)
+  exception BadMsg
+
+  (*t type 't' *)
+  type t = t_ba_char
+
+  (*t t_data - internal data *)
+  type t_data = 
+    | Value of int64
+    | Arr   of (int * int) (* offset, length *)
+
+  (*m Value module to convert data to useful values *)
+  module Value =
+  struct
+    (*f double_of_int64 *)
+    let double_of_int64 v = Int64.float_of_bits v
+
+    (*f float_of_int32 *)
+    let float_of_int32 v  = Int32.float_of_bits v
+
+    (*t BadValue exception *)
+    exception BadValue
+
+    (*f int64 - used externally and internally  *)
+    let int64 w =
+      match w with
+      | Value v -> v
+      | _ -> raise BadValue
+
+    (*f int32 - used externally and internally *)
+    let int32 w =
+      Int64.to_int32 (int64 w)
+
+    (* as_ofs_len - used internally *)
+    let as_ofs_len v =
+      match v with
+      | Arr (ofs,len) -> (ofs, len)
+      | _ -> raise BadValue
+
+    (*f string *)
+    let string ba (v:t_data) =
+      let (ofs,len) = as_ofs_len v in
+      String.init len (fun i -> ba.{ofs+i})
+
+    (*f int *)
+    let int w =
+      Int64.to_int (int64 w)
+
+    (*f bool *)
+    let bool w =
+      (int64 w) == 1L
+
+    (*f float *)
+    let float w =
+      float_of_int32 (int32 w)
+
+    (*f double *)
+    let double w =
+      double_of_int64 (int64 w)
+
+    (*f rep_double *)
+    let rep_double t v =
+      let (ofs,len) = as_ofs_len v in
+      let arr = Ba.retype_sub Bigarray.float64 Bigarray.c_layout t ofs len in
+      arr
+
+    (*f rep_float *)
+    let rep_float t v =
+      let (ofs,len) = as_ofs_len v in
+      let arr = Ba.retype_sub Bigarray.float32 Bigarray.c_layout t ofs len in
+      arr
+
+    (*f rep_int32 *)
+    let rep_int32 t v =
+      let (ofs,len) = as_ofs_len v in
+      let arr = Ba.retype_sub Bigarray.int32 Bigarray.c_layout t ofs len in
+      arr
+
+    (*f rep_int64 *)
+    let rep_int64 t v =
+      let (ofs,len) = as_ofs_len v in
+      let arr = Ba.retype_sub Bigarray.int64 Bigarray.c_layout t ofs len in
+      arr
+
+    (*f array *)
+    let array t v =
+      let (ofs,len) = as_ofs_len v in (t, ofs, len)
+
+    (*f All done *)
+  end
+
+  (*t t_gen_fold_fn *)
+  type ('a,'b) t_gen_fold_fn = 'a -> 'b -> 'a
+
+  (*t t_fold_fn - functions of this type are supplied to fold_message to invoke callbacks on particular keys with their data*)
+  type 'a t_fold_fn =
+    | String of ('a, string)  t_gen_fold_fn
+    | Bool   of ('a, bool)    t_gen_fold_fn
+    | Enum   of ('a, int)     t_gen_fold_fn
+    | Int    of ('a, int)     t_gen_fold_fn
+    | Float  of ('a, float)   t_gen_fold_fn
+    | Double of ('a, float)   t_gen_fold_fn
+    | Int32  of ('a, int32)   t_gen_fold_fn
+    | Int64  of ('a, int64)   t_gen_fold_fn
+    | RepDouble of ('a, t_ba_double)  t_gen_fold_fn
+    | RepFloat  of ('a, t_ba_float)  t_gen_fold_fn
+    | RepInt32  of ('a, t_ba_int32)  t_gen_fold_fn
+    | RepInt64  of ('a, t_ba_int64)  t_gen_fold_fn
+    | Blob      of ('a, (t * int * int))  t_gen_fold_fn
+
+  (*f exec_fold_fn - execute the correct kind of fold function *)
+  let exec_fold_fn t f acc v =
+    match f with
+    | String  f    -> f acc (Value.string t v)
+    | Double f     -> f acc (Value.double v)
+    | Float  f     -> f acc (Value.float  v)
+    | Bool  f      -> f acc (Value.bool   v)
+    | Enum  f      -> f acc (Value.int    v)
+    | Int   f      -> f acc (Value.int    v)
+    | Int32  f     -> f acc (Value.int32  v)
+    | Int64  f     -> f acc (Value.int64  v)
+    | RepDouble f  -> f acc (Value.rep_double t v)
+    | RepFloat f   -> f acc (Value.rep_float t v)
+    | RepInt32 f   -> f acc (Value.rep_int32 t v)
+    | RepInt64 f   -> f acc (Value.rep_int64 t v)
+    | Blob f       -> f acc (Value.array t v)
+
+  (*f read_varint - read a varint from an mbf (byte bigarray) at an offset as int64 and return new offset *)
+  let read_varint t o =
+    let rec acc_bits i acc =
+      let v = Char.code t.{o+i} in
+      let value = v land 0x7f in
+      let continues = (v land 0x80)!=0 in
+      let new_acc = Int64.(logor (shift_left (of_int value) (7*i))acc) in
+      if (continues) then (acc_bits (i+1) new_acc) else (i+1, new_acc)
+    in
+    let (n, value) = acc_bits 0 0L in
+    (value, o+n)
+
+  (*f read_int_n - read an N byte integer (as an int64) little endian *)
+  let read_int_n t o n =
+    let rec acc_int n acc =
+      if (n<0) then acc else (
+        acc_int (n-1) Int64.(logor (shift_left acc 8) (of_int (Char.code t.{o+n})))
+      ) in
+    ((acc_int (n-1) 0L), o+n)
+
+  (*f read_int_of_4 - read a 4 byte integer (as an int64) little endian *)
+  let read_int_of_4 t o = read_int_n t o 4
+
+  (*f read_int_of_8 - read an 8 byte integer (as an int64) little endian *)
+  let read_int_of_8 t o = read_int_n t o 8
+
+  (*f read_type_and_key - read a key from an mbf as field number/type
+  The key is a number plus a type
+  The types are:
+    0 -> inline 4-byte
+    1 -> inline 8-byte
+    2 -> inline len + data
+    3 -> offset + len
+    4-7 reserved
+   *)
+  let read_type_and_key t o =
+    let (k, no) = read_varint t o in
+    let key          = Int64.(shift_right k 3) in
+    let field_type   = (Int64.to_int k) land 7 in
+    (field_type, key, no)
+
+  (*f read_key_value - read a key/value pair and return key, wire value and new offset
+
+    Returns (key * Value (t_data) * new offset )
+  *)
+  let read_key_value t o =
+    let (field_type, key, no) = read_type_and_key t o in
+    match field_type with
+    | 0 -> let (value, no)  = read_int_of_4 t no in (key, Value value, no)
+    | 1 -> let (value, no)  = read_int_of_8 t no in (key, Value value, no)
+    | 2 -> let (size, no)   = read_varint   t no in
+           let size = Int64.to_int size in
+           (key, Arr (no,size), no+size)
+    | 3 -> let (ofs, no) = read_varint   t no in
+           let (size, no) = read_varint   t no in
+           let ofs  = Int64.to_int ofs in
+           let size = Int64.to_int size in
+           (key, Arr (ofs,size), no)
+    | _ -> raise BadMsg
+                 
+  (*f fold_message - Fold over a complete protobuf message, invoking appropriate function for each element *)
+  let fold_message t fn_of_key acc ofs len =
+    let end_of_block = ofs+len in
+    let rec fold_over_kv acc ofs =
+      if (ofs>=end_of_block) then (
+        acc
+      ) else (
+        let (k,v,new_ofs) = read_key_value t ofs in
+        let new_acc = 
+          match fn_of_key k with
+          | None -> acc
+          | Some f -> exec_fold_fn t f acc v
+        in
+        fold_over_kv new_acc new_ofs
+      )
+    in
+    fold_over_kv acc ofs
 
   (*f All done *)
 end
