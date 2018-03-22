@@ -369,7 +369,7 @@ shm_data_alloc(struct shm *shm, const char *shm_filename, int shm_key, size_t by
     struct shmid_ds shmid_ds;
     struct shm_data *shm_data;
 
-    shm_data = (struct shm_data *)malloc(sizeof(shm_data));
+    shm_data = (struct shm_data *)malloc(sizeof(struct shm_data));
     shm_flags = 0x1ff;
     if (create) {
         if (byte_size==0) {

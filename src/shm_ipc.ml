@@ -42,7 +42,7 @@ module Shm = struct
   external _shm_data_alloc : t_shm -> string -> int -> int64 -> int -> t_shm_data = "shm_c_data_alloc"
   external _shm_is_null       : t_shm        -> bool = "shm_c_is_null"
   external _shm_data_is_null  : t_shm_data   -> bool = "shm_c_is_null"
-  external _shm_data_as_ba    : t_shm_data -> t_ba_char = "shm_c_data_as_ba"
+  external _shm_data_as_ba    : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> t_shm_data -> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_data_as_ba"
 
   (*f init - initialize the system *)
   let init _ = _shm_init ()
@@ -54,7 +54,7 @@ module Shm = struct
     d
 
   (*f data_ba - Get Bigarray of the data *)
-  let data_ba shm_data = _shm_data_as_ba shm_data
+  let data_ba shm_data = _shm_data_as_ba Bigarray.char Bigarray.c_layout shm_data
 
 end
 
@@ -72,8 +72,6 @@ module Ipc = struct
   type t_msg
 
   (*f external C stub function declarations *)
-  external _shm_msg_alloc       : t_s -> int -> t_msg = "shm_c_msg_alloc"
-  external _shm_msg_free        : t_s -> t_msg -> unit = "shm_c_msg_free"
   external _shm_msg_ba          : t_msg -> t_ba_char = "shm_c_msg_data_as_ba"
 
   (*m Server submodule *)
@@ -85,9 +83,11 @@ module Ipc = struct
     (*f external C stub function declarations *)
     external _shm_ipcs_is_null  : t_s  -> bool = "shm_c_is_null"
     external _shm_server_create     : ('a, 'b, 'c) Bigarray.Array1.t -> string -> int -> t_s = "shm_c_server_create"
-    external _shm_server_send_msg   : t_s -> int -> t_msg -> int = "shm_c_server_send_msg"
+    external _shm_server_send_msg   : t_s -> int -> t_msg -> int            = "shm_c_server_send_msg"
     external _shm_server_poll       : t_s -> int -> (t_event * t_msg * int) = "shm_c_server_poll"
-    external _shm_server_shutdown   : t_s -> int  -> int                = "shm_c_server_shutdown"
+    external _shm_server_shutdown   : t_s -> int  -> int                    = "shm_c_server_shutdown"
+    external _shm_msg_alloc         : t_s -> int -> t_msg = "shm_c_msg_alloc"
+    external _shm_msg_free          : t_s -> t_msg -> unit = "shm_c_msg_free"
 
     (*f create - create a server (must be done prior to clients connecting...) *)
     let create ba name max_clients =
@@ -110,7 +110,7 @@ module Ipc = struct
     (*f poll - poll for an event (shutdown, message from any client, etc) with a timeout *)
     let poll s timeout = _shm_server_poll s timeout
 
-  (*f All done *)
+    (*f All done *)
   end
 
   (*m Client submodule *)
@@ -141,13 +141,27 @@ module Ipc = struct
     (*f stop - stops the the client*)
     let stop t = _shm_client_stop t
 
-  (*f All done *)
+    (*f All done *)
   end
 
   (* msg_ba - get Bigarray for the contents of a message *)
   let msg_ba msg = _shm_msg_ba msg
 
-(*f All done *)
+  (*f All done *)
+end
+
+(*m Ba
+ *)
+module Ba = 
+struct
+  (*f external C stub function declarations *)
+  external _shm_ba_retype  : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> ('d, 'e, 'f) Bigarray.Array1.t-> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_ba_retype"
+  external _shm_ba_address  : ('a, 'b, 'c) Bigarray.Array1.t -> int64 = "shm_c_ba_address"
+
+  let retype  kind layout ba = _shm_ba_retype kind layout ba
+  let address ba             = _shm_ba_address ba
+
+  (*f All done *)
 end
 
 (*a Helper functions *)

@@ -28,7 +28,9 @@
  */
 #define CAML_NAME_SPACE 
 #include <caml/mlvalues.h>
+#define CAML_INTERNALS
 #include <caml/bigarray.h>
+#undef CAML_INTERNALS
 #include <caml/alloc.h>
 #include <caml/memory.h>
 #include <caml/fail.h>
@@ -400,18 +402,49 @@ shm_c_is_null(value s)
     CAMLreturn(Val_bool(*((void **)Data_custom_val(s))==NULL));
 }
 
-/*f shm_c_data_as_ba : data -> 
+/*f shm_c_data_as_ba : kind -> layout -> data -> ('a, 'b, 'c) Bigarray.Array1.t
  *
- * Return true if value is NULL
+*/
+extern "C"
+CAMLprim value
+shm_c_data_as_ba(value kind, value layout, value r)
+{
+    CAMLparam3(kind, layout, r);
+    struct shm_data *shm_data = shm_data_of_val(r);
+    int ba_kind   = Caml_ba_kind_val(kind);
+    int ba_layout = Caml_ba_layout_val(layout);
+    size_t byte_size = shm_data_byte_size(shm_data) / caml_ba_element_size[ba_kind];
+    void *base       = shm_data_base(shm_data);
+    CAMLreturn(caml_ba_alloc_dims(ba_kind | ba_layout, 1, base, byte_size ));
+}
+
+/*f shm_c_ba_retype : kind -> layout -> ('d, 'e, 'f) Bigarray.Array1.t ->  ('a, 'b, 'c) Bigarray.Array1.t
+ *
+ * must only retype an _externally_ allocated bigarray or keep it in scope
  *
  */
 extern "C"
 CAMLprim value
-shm_c_data_as_ba(value r)
+shm_c_ba_retype(value kind, value layout, value ba)
 {
-    CAMLparam1(r);
-    struct shm_data *shm_data = shm_data_of_val(r);
-    size_t byte_size = shm_data_byte_size(shm_data);
-    void *base       = shm_data_base(shm_data);
-    CAMLreturn(caml_ba_alloc_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT, 1, base, byte_size ));
+    CAMLparam3(kind, layout, ba);
+    struct caml_ba_array *data = Caml_ba_array_val(ba);
+    int ba_kind   = Caml_ba_kind_val(kind);
+    int ba_layout = Caml_ba_layout_val(layout);
+    size_t byte_size = caml_ba_byte_size(data) / caml_ba_element_size[ba_kind];
+    void *base = &(data->data);
+    CAMLreturn(caml_ba_alloc_dims(ba_kind | ba_layout, 1, base, byte_size ));
+}
+
+/*f shm_c_ba_address : ('a, 'b, 'c) Bigarray.Array1.t -> 
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_ba_address(value ba)
+{
+    CAMLparam1(ba);
+    struct caml_ba_array *data = Caml_ba_array_val(ba);
+    void *base = &(data->data);
+    CAMLreturn(caml_copy_int64((int64_t) (base)));
 }

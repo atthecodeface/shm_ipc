@@ -8,13 +8,13 @@ let trace pos =
 let create_server _ =
   let (shm, data, server) = Shm_ipc.create_server "TestSever" 1 "/tmp/a.blob" 12345 65536L in
   let data_ba = Shm_ipc.Shm.data_ba data in
-  Printf.printf "Blah size %d\n" (Bigarray.Array1.dim data_ba);
+  Printf.printf "Blah size %d address %0Lx\n" (Bigarray.Array1.dim data_ba) (Shm_ipc.Ba.address data_ba);
   server
 
 let create_client _ =
   let (shm, data, client) = Shm_ipc.create_client "/tmp/a.blob" 12345 65536L in
   let data_ba = Shm_ipc.Shm.data_ba data in
-  Printf.printf "Blah size %d\n" (Bigarray.Array1.dim data_ba);
+  Printf.printf "Blah size %d address %0Lx\n" (Bigarray.Array1.dim data_ba) (Shm_ipc.Ba.address data_ba);
   client
 
 let server_thread s msg =
