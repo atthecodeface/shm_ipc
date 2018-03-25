@@ -26,6 +26,9 @@ type t_ba_int64  = (int64, Bigarray.int64_elt,         Bigarray.c_layout) Bigarr
 type t_ba_float  = (float, Bigarray.float32_elt,       Bigarray.c_layout) Bigarray.Array1.t
 type t_ba_double = (float, Bigarray.float64_elt,       Bigarray.c_layout) Bigarray.Array1.t
 
+(*a Useful functions *)
+let sfmt = Printf.sprintf
+
 (*a Modules
   Shm - the base shared memory module
   Ipc - the client/server interprocess communication
@@ -163,8 +166,13 @@ struct
   external _shm_ba_retype_sub  : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> ('d, 'e, 'f) Bigarray.Array1.t -> int -> int -> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_ba_retype_sub"
   external _shm_ba_address  : ('a, 'b, 'c) Bigarray.Array1.t -> int64 = "shm_c_ba_address"
 
+  (*f retype_sub Bigarray.kind Bigarray.layout Bigarray.Array1.t ofs len - ofs and len are in source ba terms *)
   let retype_sub  kind layout ba ofs len = _shm_ba_retype_sub kind layout ba ofs len
+
+  (*f retype Bigarray.kind Bigarray.layout Bigarray.Array1.t - retype the whole bigarray *)
   let retype      kind layout ba = _shm_ba_retype kind layout ba
+
+  (*f address - get data address of the BA (for debug for now...) *)
   let address     ba             = _shm_ba_address ba
 
   (*f All done *)
@@ -185,7 +193,7 @@ end
 module Mbf =
 struct
   (*t exceptions *)
-  exception BadMsg
+  exception BadMsg of string
 
   (*t type 't' *)
   type t = t_ba_char
@@ -363,6 +371,12 @@ struct
   (*m Value module to convert data to useful values *)
   module Value =
   struct
+    (*f str *)
+    let str v =
+      match v with
+      | Value x -> sfmt "%016Lx" x
+      | Arr (ofs,len) -> sfmt "(%d,%d)" ofs len
+
     (*f double_of_int64 *)
     let double_of_int64 v = Int64.float_of_bits v
 
@@ -508,7 +522,7 @@ struct
            let ofs  = Int64.to_int ofs in
            let size = Int64.to_int size in
            (key, Arr (ofs,size), no)
-    | _ -> raise BadMsg
+    | _ -> raise (BadMsg (sfmt "unknown field type %d in mbf typed key" field_type))
                  
   (*f exec_fold_fn - execute the correct kind of fold function *)
   let exec_fold_fn t f acc v =
@@ -527,19 +541,32 @@ struct
     | RepInt64 f   -> f acc (Value.rep_int64 t v)
     | Blob f       -> f acc (Value.array t v)
 
-  (*f fold_message - Fold over a complete mbf message, invoking appropriate function for each element *)
-  let fold_message t fn_of_key acc ofs len =
+  (*f fold_message - Fold over an mbf message blob, invoking appropriate function for each element *)
+  let fold_message t ?verbose:(verbose=false) fn_of_key acc ofs len =
     let end_of_block = ofs+len in
     let rec fold_over_kv acc ofs =
+      if verbose then Printf.printf "Scanning offset %d end %d\n" ofs end_of_block;
       if (ofs>=end_of_block) then (
         acc
       ) else (
         let (k,v,new_ofs) = read_key_value t ofs in
+        if verbose then Printf.printf "key %d new_ofs %d value %s\n" k new_ofs (Value.str v);
         let new_acc = exec_fold_fn t (fn_of_key k) acc v in
         fold_over_kv new_acc new_ofs
       )
     in
     fold_over_kv acc ofs
+
+  (*f fold_root_message - Fold over a complete mbf message that is key 0 length N, invoking appropriate function for each element *)
+  let fold_root_message t ?verbose:(verbose=false) fn_of_key acc ofs len =
+    let (k,v,new_ofs) = read_key_value t ofs in
+    if (k<>0) || (new_ofs<=len) then (
+        let (_,ofs,len) = Value.array t v in
+        if verbose then Printf.printf "Root message offset %d len %d\n" ofs len;
+        fold_message t ~verbose:verbose fn_of_key acc ofs len
+    ) else (
+      raise (BadMsg "Root message block must have key 0 and array value whose length does no go beyond message")
+    )
 
   (*f All done *)
 end
