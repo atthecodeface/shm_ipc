@@ -131,7 +131,9 @@ module Ipc = struct
     external _shm_client_start    : ('a, 'b, 'c) Bigarray.Array1.t -> t_c                  = "shm_c_client_start"
     external _shm_client_poll       : t_c -> int -> (t_event * t_msg) = "shm_c_client_poll"
     external _shm_client_send_msg   : t_c -> t_msg -> int= "shm_c_client_send_msg"
-    external _shm_client_stop     : t_c -> unit                  = "shm_c_client_stop"
+    external _shm_client_stop       : t_c -> unit                  = "shm_c_client_stop"
+    external _shm_msg_alloc         : t_c -> int -> t_msg = "shm_c_msg_alloc"
+    external _shm_msg_free          : t_c -> t_msg -> unit = "shm_c_msg_free"
 
     (*f start - start a client; requires server to be running *)
     let start ba  =
@@ -147,6 +149,12 @@ module Ipc = struct
 
     (*f stop - stops the the client*)
     let stop t = _shm_client_stop t
+
+    (*f msg_alloc - allocate a message from the shared memory *)
+    let msg_alloc t size = _shm_msg_alloc t size
+
+    (*f msg_free - free a previously allocated message from the shared memory *)
+    let msg_free t msg = _shm_msg_free t msg
 
     (*f All done *)
   end
