@@ -219,11 +219,13 @@ int shm_ipc_size(void);
  *
  * @param desc Structure filled out with maximum number of clients, server name, etc
  *
+ * @param byte_size Size of data for message heap and @p shm_ipc data - if 0, use the default (about 8k)
+ *
  * Initializes a server with support for up to the supplied maximum number of clients
  *
  * Clients cannot connect to a server until it has been initialized
  */
-void shm_ipc_server_init(struct shm_ipc *shm_ipc, const struct shm_ipc_server_desc *desc);
+void shm_ipc_server_init(struct shm_ipc *shm_ipc, const struct shm_ipc_server_desc *desc, int byte_size);
 
 /*f shm_ipc_server_shutdown */ /**
  *

@@ -127,7 +127,7 @@ shm_c_server_create(value ba, value nm, value mc)
         struct shm_ipc_server_desc desc;
         desc.name        = String_val(nm);
         desc.max_clients = Long_val(mc);
-        shm_ipc_server_init(shm_ipc, &desc);
+        shm_ipc_server_init(shm_ipc, &desc, byte_size);
         caml_register_global_root(&ba);
         ocaml_shm_ipc->ba = ba;
         ocaml_shm_ipc->shm_ipc = shm_ipc;
@@ -450,7 +450,7 @@ shm_c_ba_retype_sub(value dest_kind, value dest_layout, value ba, value ofs, val
     struct caml_ba_array *src = Caml_ba_array_val(ba);
     int ba_kind   = Caml_ba_kind_val(dest_kind);
     int ba_layout = Caml_ba_layout_val(dest_layout);
-    fprintf(stderr, "Base %p size %lu\n", src, caml_ba_byte_size(src));
+    //fprintf(stderr, "Base %p size %lu\n", src, caml_ba_byte_size(src));
     size_t src_ofs      = Long_val(ofs) * caml_ba_element_size[(src->flags) & CAML_BA_KIND_MASK];
     size_t byte_size    = Long_val(len) * caml_ba_element_size[(src->flags) & CAML_BA_KIND_MASK];
     size_t last_byte    = src_ofs + byte_size;

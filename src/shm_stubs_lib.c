@@ -385,7 +385,7 @@ shm_data_alloc(struct shm *shm, const char *shm_filename, int shm_key, size_t by
         byte_size = 0;
     }
     key = ftok(shm_filename, shm_key);
-    
+
     shm_data->id = shmget(key, byte_size, SHM_HUGETLB | shm_flags );
     if (shm_data->id == -1) {
         fprintf(stderr,"Failed to allocate SHM id\n");

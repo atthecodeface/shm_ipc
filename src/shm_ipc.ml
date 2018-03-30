@@ -80,6 +80,7 @@ module Ipc = struct
 
   (*f external C stub function declarations *)
   external _shm_msg_ba          : t_msg -> t_ba_char = "shm_c_msg_data_as_ba"
+  external _shm_msg_is_null     : t_msg -> bool = "shm_c_is_null"
 
   (*m Server submodule *)
   module Server = struct
@@ -109,7 +110,10 @@ module Ipc = struct
     let shutdown s timeout = _shm_server_shutdown s timeout
 
     (*f msg_alloc - allocate a message from the shared memory *)
-    let msg_alloc s size = _shm_msg_alloc s size
+    let msg_alloc s size = 
+      let msg = _shm_msg_alloc s size in
+      if _shm_msg_is_null msg then raise (ServerErr "Failed to allocate message");
+      msg
 
     (*f msg_free - free a previously allocated message from the shared memory *)
     let msg_free s msg = _shm_msg_free s msg
@@ -151,7 +155,10 @@ module Ipc = struct
     let stop t = _shm_client_stop t
 
     (*f msg_alloc - allocate a message from the shared memory *)
-    let msg_alloc t size = _shm_msg_alloc t size
+    let msg_alloc t size = 
+      let msg = _shm_msg_alloc t size in
+      if _shm_msg_is_null msg then raise (ClientErr "Failed to allocate message");
+      msg
 
     (*f msg_free - free a previously allocated message from the shared memory *)
     let msg_free t msg = _shm_msg_free t msg

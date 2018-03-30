@@ -31,8 +31,11 @@
 #include <inttypes.h>
 #include "shm_stubs_ipc.h"
 
+
 /*a Defines
  */
+#define VERBOSE_MSG_ALLOC 0
+#define VERBOSE_MSG_FREE  0
 
 /*a Enumerations
  */
@@ -626,7 +629,7 @@ server_client_shutdown(struct shm_ipc *shm_ipc, int client)
 /*f msg_init
  */
 static void
-msg_init(struct shm_ipc *shm_ipc)
+msg_init(struct shm_ipc *shm_ipc, int byte_size)
 {
     int msg_ofs;
     struct shm_ipc_msg *msg;
@@ -634,11 +637,17 @@ msg_init(struct shm_ipc *shm_ipc)
     msg_ofs = (char *)shm_ipc->msg.data - (char *)&shm_ipc->msg;
     shm_ipc->msg.hdr.free_list = msg_ofs;
 
+    if (byte_size==0) {
+        byte_size = sizeof(shm_ipc->msg.data);
+    } else {
+        byte_size -= (char *)shm_ipc->msg.data - (char *)shm_ipc;
+    }
+
     msg = (struct shm_ipc_msg *) ((char *)&shm_ipc->msg + msg_ofs);
     msg->hdr.next_in_list = 0;
     msg->hdr.prev_in_list = 0;
     msg->hdr.next_free = 0;
-    msg->hdr.byte_size = sizeof(shm_ipc->msg.data);
+    msg->hdr.byte_size = byte_size;
 }
 
 /*f msg_claim_block
@@ -685,12 +694,12 @@ msg_dump(struct shm_ipc *shm_ipc)
     if (msg_claim_block(shm_ipc) != 0) {
         return;
     }
-    printf("msg_dump %p : %6d\n",(void *)shm_ipc, shm_ipc->msg.hdr.free_list );
+    fprintf(stderr,"msg_dump %p : %6d\n",(void *)shm_ipc, shm_ipc->msg.hdr.free_list );
     msg_ofs = (char *)shm_ipc->msg.data - (char *)&shm_ipc->msg;
     blk = 0;
     while (msg_ofs != 0) {
         msg = (struct shm_ipc_msg *) ((char *)&shm_ipc->msg + msg_ofs);
-        printf("%4d @ %6d of %6dB (>%6d <%6d next_free %6d)\n",
+        fprintf(stderr,"%4d @ %6d of %6dB (>%6d <%6d next_free %6d)\n",
                blk,
                msg_ofs,
                msg->hdr.byte_size,
@@ -732,18 +741,18 @@ msg_check_heap(struct shm_ipc *shm_ipc)
             free_list_found = 1;
         }
         if (msg->hdr.prev_in_list != prev_ofs) {
-            printf("Block at %6d has incorrect previous of %6d instead of %6d\n",
+            fprintf(stderr,"Block at %6d has incorrect previous of %6d instead of %6d\n",
                    msg_ofs, msg->hdr.prev_in_list, prev_ofs);
             total_errors++;
         }
         if ((msg->hdr.next_in_list != 0) && (msg->hdr.next_in_list != msg_ofs + msg->hdr.byte_size)) {
-            printf("Block at %6d has mismatching next (diff of %6d) and byte size %6d\n",
+            fprintf(stderr,"Block at %6d has mismatching next (diff of %6d) and byte size %6d\n",
                    msg_ofs, msg->hdr.next_in_list - msg_ofs, msg->hdr.byte_size);
             total_errors++;
         }
         if (prev_ofs != 0) {
             if (prev_free && (msg->hdr.next_free != -1)) {
-                printf("Successive blocks at %6d and %d are both free\n",
+                fprintf(stderr,"Successive blocks at %6d and %d are both free\n",
                        prev_ofs, msg_ofs);
                 total_errors++;
             }
@@ -756,14 +765,14 @@ msg_check_heap(struct shm_ipc *shm_ipc)
 
     msg_ofs = shm_ipc->msg.hdr.free_list;
     if (msg_ofs < 0) {
-            printf("Bad free list chain %6d\n",
+            fprintf(stderr,"Bad free list chain %6d\n",
                    msg_ofs);
             msg_ofs = 0;
     }
     while (msg_ofs != 0) {
         msg = (struct shm_ipc_msg *) ((char *)&shm_ipc->msg + msg_ofs);
         if (msg->hdr.next_free < 0) {
-            printf("Bad free list chain at %6d (next of %6d)\n",
+            fprintf(stderr,"Bad free list chain at %6d (next of %6d)\n",
                    msg_ofs, msg->hdr.next_free);
             total_errors++;
             msg_ofs = 0;
@@ -773,7 +782,7 @@ msg_check_heap(struct shm_ipc *shm_ipc)
     }
 
     if (!free_list_found && (shm_ipc->msg.hdr.free_list != 0)) {
-        printf("Failed to find start of free list %6d\n",
+        fprintf(stderr,"Failed to find start of free list %6d\n",
                shm_ipc->msg.hdr.free_list);
         total_errors++;
     }
@@ -1018,7 +1027,7 @@ shm_ipc_size(void)
 /*f shm_ipc_server_init
  */
 void
-shm_ipc_server_init(struct shm_ipc *shm_ipc, const struct shm_ipc_server_desc *desc)
+shm_ipc_server_init(struct shm_ipc *shm_ipc, const struct shm_ipc_server_desc *desc, int byte_size)
 {
     int max_clients;
     int i;
@@ -1037,7 +1046,7 @@ shm_ipc_server_init(struct shm_ipc *shm_ipc, const struct shm_ipc_server_desc *d
         msg_queue_init(&shm_ipc->clients[i].to_clientq);
         msg_queue_init(&shm_ipc->clients[i].to_serverq);
     }
-    msg_init(shm_ipc);
+    msg_init(shm_ipc, byte_size);
 }
 
 /*f shm_ipc_server_shutdown
@@ -1084,8 +1093,8 @@ shm_ipc_msg_alloc(struct shm_ipc *shm_ipc, int size)
     int prev_ofs;
     int msg_ofs;
 
-    if (0) {
-        printf("alloc %d\n",size);
+    if (VERBOSE_MSG_ALLOC) {
+        fprintf(stderr, "alloc %d\n",size);
         msg_check_heap(shm_ipc);
     }
 
@@ -1144,7 +1153,7 @@ shm_ipc_msg_alloc(struct shm_ipc *shm_ipc, int size)
 
     msg_release_block(shm_ipc);
 
-    if (0) msg_check_heap(shm_ipc);
+    if (VERBOSE_MSG_ALLOC) msg_check_heap(shm_ipc);
 
     return msg;
 }
@@ -1158,8 +1167,8 @@ shm_ipc_msg_free(struct shm_ipc *shm_ipc, struct shm_ipc_msg *shm_ipc_msg)
     int prev_ofs;
     int next_ofs;
 
-    if (0) {
-        printf("free %p\n",(void *)shm_ipc_msg);
+    if (VERBOSE_MSG_FREE) {
+        fprintf(stderr,"free %p\n",(void *)shm_ipc_msg);
         msg_check_heap(shm_ipc);
     }
 
@@ -1168,8 +1177,8 @@ shm_ipc_msg_free(struct shm_ipc *shm_ipc, struct shm_ipc_msg *shm_ipc_msg)
     }
 
     msg_ofs = (char *)shm_ipc_msg - (char *)&shm_ipc->msg;
-    if (0) {
-        printf("free %d\n",msg_ofs);
+    if (VERBOSE_MSG_FREE) {
+        fprintf(stderr,"free %d\n",msg_ofs);
     }
     shm_ipc_msg->hdr.next_free = 0;
 
@@ -1239,7 +1248,7 @@ shm_ipc_msg_free(struct shm_ipc *shm_ipc, struct shm_ipc_msg *shm_ipc_msg)
     }
     msg_release_block(shm_ipc);
 
-    if (0) msg_check_heap(shm_ipc);
+    if (VERBOSE_MSG_FREE) msg_check_heap(shm_ipc);
 }
 
 /*f shm_ipc_server_send_msg
