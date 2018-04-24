@@ -35,6 +35,22 @@ let sfmt = Printf.sprintf
   Ba  - Bigarray manipulation (reshaping particularly)
   Mbf - Message buffer format (like Google protobuf, but in-memory so no compressing data)
  *)
+(*m Timer *)
+module Timer = struct
+type t_timer
+external t_create   : unit -> t_timer   = "shm_c_timer_create"
+external t_init     : t_timer -> unit   = "shm_c_timer_init"
+external t_entry    : t_timer -> unit   = "shm_c_timer_entry"
+external t_exit     : t_timer -> unit   = "shm_c_timer_exit"
+external t_value    : t_timer -> int64  = "shm_c_timer_value"
+external t_value_us : t_timer -> float  = "shm_c_timer_value_us"
+    let make ()     = t_create ()
+    let init t      = t_init t
+    let exit t      = t_exit t
+    let entry t     = t_entry t
+    let value_us t  = t_value_us t
+end
+
 (*m Shm *)
 module Shm = struct
   (*t Exceptions *)
@@ -47,8 +63,10 @@ module Shm = struct
   (*f external C stub function declarations *)
   external _shm_init :       unit -> t_shm = "shm_c_init"
   external _shm_data_alloc : t_shm -> string -> int -> int64 -> int -> t_shm_data = "shm_c_data_alloc"
+  external _shm_huge_alloc : t_shm -> int64 -> t_shm_data = "shm_c_huge_alloc"
   external _shm_is_null       : t_shm        -> bool = "shm_c_is_null"
   external _shm_data_is_null  : t_shm_data   -> bool = "shm_c_is_null"
+  external _shm_data_physical : t_shm -> t_shm_data   -> Int64.t = "shm_c_data_phys_address"
   external _shm_data_as_ba    : ('a,'b) Bigarray.kind -> 'c Bigarray.layout -> t_shm_data -> ('a, 'b, 'c) Bigarray.Array1.t = "shm_c_data_as_ba"
 
   (*f init - initialize the system *)
@@ -60,8 +78,19 @@ module Shm = struct
     if _shm_data_is_null d then raise (DataErr "Failed to allocate data");
     d
 
+  (*f huge_alloc - Allocate simple huge pages *)
+  let huge_alloc shm size = 
+    let d = _shm_huge_alloc shm size in
+    if _shm_data_is_null d then raise (DataErr "Failed to allocate data");
+    d
+
   (*f data_ba - Get Bigarray of the data *)
   let data_ba shm_data = _shm_data_as_ba Bigarray.char Bigarray.c_layout shm_data
+
+  (*f data_physical - Get physical address of data (if possible) *)
+  let data_physical shm shm_data = 
+    let d = _shm_data_physical shm shm_data in
+    if d = 0L then None else Some d
 
 end
 

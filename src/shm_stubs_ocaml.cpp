@@ -43,6 +43,7 @@
 
 extern "C"
 {
+#include "timer.h"
 #include "shm_stubs_lib.h"
 #include "shm_stubs_ipc.h"
 }
@@ -79,6 +80,7 @@ typedef struct t_ocaml_shm_ipc {
     int client;
 } t_ocaml_shm_ipc;
 
+#define timer_of_val(v) (*((t_sl_timer *) Data_custom_val(v)))
 #define shm_of_val(v) (*((struct shm **) Data_custom_val(v)))
 #define shm_data_of_val(v) (*((struct shm_data **) Data_custom_val(v)))
 #define shm_ipc_msg_of_val(v) (*((struct shm_ipc_msg **) Data_custom_val(v)))
@@ -109,6 +111,79 @@ list active clients of server
 
 get state of server
  */
+/*f shm_c_time_alloc
+ *
+ * Creates a timer
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_timer_create(void)
+{
+    CAMLparam0();
+    value r = caml_alloc_custom(&custom_ops, sizeof(t_sl_timer), 0, 1);
+    SL_TIMER_INIT(timer_of_val(r));
+    CAMLreturn(r);
+}
+
+/*f shm_c_timer_init
+ *
+ */
+extern "C"
+CAMLprim void
+shm_c_timer_init(value v)
+{
+    CAMLparam1(v);
+    SL_TIMER_INIT(timer_of_val(v));
+    CAMLreturn0;
+}
+
+/*f shm_c_timer_entry
+ *
+ */
+extern "C"
+CAMLprim void
+shm_c_timer_entry(value v)
+{
+    CAMLparam1(v);
+    SL_TIMER_ENTRY(timer_of_val(v));
+    CAMLreturn0;
+}
+
+/*f shm_c_timer_exit
+ *
+ */
+extern "C"
+CAMLprim void
+shm_c_timer_exit(value v)
+{
+    CAMLparam1(v);
+    SL_TIMER_EXIT(timer_of_val(v));
+    CAMLreturn0;
+}
+
+/*f shm_c_timer_value
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_timer_value(value v)
+{
+    CAMLparam1(v);
+    CAMLreturn(caml_copy_int64(SL_TIMER_VALUE(timer_of_val(v))));
+}
+
+/*f shm_c_timer_value_us
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_timer_value_us(value v)
+{
+    CAMLparam1(v);
+    CAMLreturn(caml_copy_double(SL_TIMER_VALUE_US(timer_of_val(v))));
+}
+
 /*f shm_c_server_create : ba -> string (name) -> int (max clients) -> shm_ipc
  *
  * Creates an SHM server that can be connected to, using the bigarray provided
@@ -370,7 +445,7 @@ shm_c_init(void)
     CAMLreturn(r);
 }
 
-/*f shm_c_data_alloc : shm -> string -> int -> int64 -> int -> int
+/*f shm_c_data_alloc : shm -> string -> int -> int64 -> int -> int -> shm_data
  *
  * Allocated shared memory
  *
@@ -387,6 +462,40 @@ shm_c_data_alloc(value s, value filename, value shm_key, value byte_size, value 
     value r = caml_alloc_custom(&custom_ops, sizeof(struct shm_data *), 0, 1);
     shm_data_of_val(r) = shm_data;
     CAMLreturn(r);
+}
+
+/*f shm_c_huge_alloc : shm -> int64 -> shm_data
+ *
+ * Allocated huge pages memory (not using the shm system calls)
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_huge_alloc(value s, value byte_size)
+{
+    CAMLparam2(s, byte_size);
+    struct shm *shm = shm_of_val(s);
+    size_t byte_size_64 = Int64_val(byte_size);
+    struct shm_data *shm_data = shm_data_alloc_huge(shm, byte_size_64);
+    value r = caml_alloc_custom(&custom_ops, sizeof(struct shm_data *), 0, 1);
+    shm_data_of_val(r) = shm_data;
+    CAMLreturn(r);
+}
+
+/*f shm_c_data_phys_address : shm -> shm_data -> int64
+ *
+ * Get physical address of allocated memory (if possible, else 0)
+ *
+ */
+extern "C"
+CAMLprim value
+shm_c_data_phys_address(value s, value sd)
+{
+    CAMLparam2(s, sd);
+    struct shm *shm = shm_of_val(s);
+    struct shm_data *shm_data = shm_data_of_val(sd);
+    int64_t address64 = shm_data_physical_address(shm, shm_data, 0);
+    CAMLreturn(caml_copy_int64(address64));
 }
 
 /*f shm_c_is_null : value -> bool

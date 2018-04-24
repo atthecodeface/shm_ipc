@@ -108,6 +108,24 @@ extern void shm_shm_shutdown(struct shm *shm);
 extern shm_data_ptr shm_data_alloc(struct shm *shm, const char *shm_filename,
                          int shm_key, size_t size, int create);
 
+/*f shm_data_alloc_huge
+ */
+/**
+ *
+ * @brief Allocate huge pages as the shared memory (? one per SHM?)
+ *
+ * @param shm           SHM structure of SHM device to allocate SHM for
+ *
+ * @param size          Size in bytes of memory to create (if create is non-zero)
+ *
+ * @returns Number of bytes allocated in shared memory
+ *
+ * This function allocates huge pages of @p size bytes if the OS supports it
+ *
+ */
+extern shm_data_ptr
+shm_data_alloc_huge(struct shm *shm, size_t byte_size);
+
 /*f shm_data_ptr */
 /**
  * @brief Get pointer to SHM data allocated with @p shm_alloc
@@ -134,6 +152,22 @@ extern void *shm_data_base(shm_data_ptr shm_data);
  *
  */
 extern size_t shm_data_byte_size(shm_data_ptr shm_data);
+
+/*f shm_data_physical_address */
+/**
+ * @brief Get physical address of huge page
+ *
+ * @param shm            SHM allocated within
+ *
+ * @param shm_data       SHM data structure
+ *
+ * @returns 0 on error else a physical address
+ *
+ * Get SHM data size
+ *
+ */
+extern uint64_t
+shm_data_physical_address(struct shm *shm, struct shm_data *shm_data, uint64_t ofs);
 
 /*f shm_shm_close */
 /**

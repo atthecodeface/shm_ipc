@@ -5,6 +5,7 @@
   (public_name shm_ipc)
   (modules (shm_ipc))
   (c_names (shm_stubs_lib shm_stubs_ipc))
+  (c_flags (-DUSE_HUGETLBFS))
   (cxx_names (shm_stubs_ocaml))
   (libraries (
     batteries
