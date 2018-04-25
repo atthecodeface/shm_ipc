@@ -5,9 +5,18 @@
   (public_name shm_ipc)
   (modules (shm_ipc))
   (c_names (shm_stubs_lib shm_stubs_ipc))
-  (c_flags (-DUSE_HUGETLBFS))
+  (c_flags (:include c_flags.sexp))
   (cxx_names (shm_stubs_ocaml))
   (libraries (
     batteries
   ))
 ))
+
+(rule
+ ((targets (c_flags.sexp))
+  (deps    (config/configure.exe))
+  (action
+    (setenv DISABLE_HUGETLBFS 0 ; turn off huge TLB  (only enabled on linux anyway)
+      (run ${<})
+    )))
+)

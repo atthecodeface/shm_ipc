@@ -37,18 +37,32 @@ let sfmt = Printf.sprintf
  *)
 (*m Timer *)
 module Timer = struct
-type t_timer
-external t_create   : unit -> t_timer   = "shm_c_timer_create"
-external t_init     : t_timer -> unit   = "shm_c_timer_init"
-external t_entry    : t_timer -> unit   = "shm_c_timer_entry"
-external t_exit     : t_timer -> unit   = "shm_c_timer_exit"
-external t_value    : t_timer -> int64  = "shm_c_timer_value"
-external t_value_us : t_timer -> float  = "shm_c_timer_value_us"
-    let make ()     = t_create ()
-    let init t      = t_init t
-    let exit t      = t_exit t
-    let entry t     = t_entry t
-    let value_us t  = t_value_us t
+
+  (*t Abstract type of timer *)
+  type t_timer
+
+  (*t external C stub functions *)
+  external t_create   : unit -> t_timer   = "shm_c_timer_create"
+  external t_init     : t_timer -> unit   = "shm_c_timer_init"
+  external t_entry    : t_timer -> unit   = "shm_c_timer_entry"
+  external t_exit     : t_timer -> unit   = "shm_c_timer_exit"
+  external t_value    : t_timer -> int64  = "shm_c_timer_value"
+  external t_value_us : t_timer -> float  = "shm_c_timer_value_us"
+
+  (*f [make ()] - create a timer *)
+  let make ()     = t_create ()
+
+  (*f [init t] - initialize the timer, zeroing its internal data *)
+  let init t      = t_init t
+
+  (*f [entry t] - mark an entry into a timed region for a timer *)
+  let entry t     = t_entry t
+
+  (*f [exit t] - mark an exit from a timed region for a timer *)
+  let exit t      = t_exit t
+
+  (*f [value_us t] - return accumulated time from timed regions in microseconds for a timer *)
+  let value_us t  = t_value_us t
 end
 
 (*m Shm *)
@@ -78,7 +92,7 @@ module Shm = struct
     if _shm_data_is_null d then raise (DataErr "Failed to allocate data");
     d
 
-  (*f huge_alloc - Allocate simple huge pages *)
+  (*f huge_alloc - Allocate simple huge pages, without using 'shm' *)
   let huge_alloc shm size = 
     let d = _shm_huge_alloc shm size in
     if _shm_data_is_null d then raise (DataErr "Failed to allocate data");
@@ -92,6 +106,7 @@ module Shm = struct
     let d = _shm_data_physical shm shm_data in
     if d = 0L then None else Some d
 
+  (*f All done *)
 end
 
 (*m Ipc *)
